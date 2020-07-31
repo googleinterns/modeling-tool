@@ -19,8 +19,8 @@
 const std::string kTableName = "Singers";
 const std::string kUpdateColumnName = "Age";
 const std::string kBaseColumnName = "DefaultAge";
-const std::string kCustomDml = "UPDATE Singers SET Age = DefaultAge+10 WHERE Age IS NULL";
-// "UPDATE CaracalModels SET ExpirationTime = TIMESTAMP_ADD(TrainingTime, INTERVAL 60 DAY) WHERE ExpirationTime IS NULL"
+// const std::string kCustomDml = "UPDATE Singers SET Age = DefaultAge+10 WHERE Age IS NULL";
+const std::string kCustomDml = "UPDATE TestModels SET ExpirationTime = TIMESTAMP_ADD(TrainingTime, INTERVAL 60 DAY) WHERE ExpirationTime IS NULL";
 
 void DmlPartitionedUpdate(google::cloud::spanner::Client client) { 
   namespace spanner = ::google::cloud::spanner;
