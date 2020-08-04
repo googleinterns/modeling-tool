@@ -34,16 +34,26 @@ void ReadWriteTransaction(google::cloud::spanner::Client client) {
   namespace spanner = ::google::cloud::spanner;
   using ::google::cloud::StatusOr;
 
-  // A helper to read a single album MarketingBudget.
-  auto get_current_age =
+  // A helper to read a single Singers DefaultAge.
+  auto get_default_age =
       [](spanner::Client client, spanner::Transaction txn,
          std::int64_t id) -> StatusOr<std::int64_t> {
     auto key = spanner::KeySet().AddKey(spanner::MakeKey(id));
     auto rows = client.Read(std::move(txn), "Singers", std::move(key),
                             {"DefaultAge"});
-    
-    //auto rows = client.Read(std::move(txn), "Singers", spanner::KeySet::All(),
-      //                      {"DefaultAge"});
+    using RowType = std::tuple<std::int64_t>;
+    auto row = spanner::GetSingularRow(spanner::StreamOf<RowType>(rows));
+    if (!row) return std::move(row).status();
+    return std::get<0>(*std::move(row));
+  };
+
+  // A helper to read a single Singers Age
+  auto get_current_age =
+      [](spanner::Client client, spanner::Transaction txn,
+         std::int64_t id) -> StatusOr<std::int64_t> {
+    auto key = spanner::KeySet().AddKey(spanner::MakeKey(id));
+    auto rows = client.Read(std::move(txn), "Singers", std::move(key),
+                            {"Age"});
     using RowType = std::tuple<std::int64_t>;
     auto row = spanner::GetSingularRow(spanner::StreamOf<RowType>(rows));
     if (!row) return std::move(row).status();
@@ -51,23 +61,35 @@ void ReadWriteTransaction(google::cloud::spanner::Client client) {
   };
 
   auto commit = client.Commit(
-      [&client, &get_current_age](
+      [&client, &get_default_age, &get_current_age](
           spanner::Transaction const& txn) -> StatusOr<spanner::Mutations> {
-        auto b1 = get_current_age(client, txn, 1);
-        if (!b1) return std::move(b1).status();
-        //auto b2 = get_current_age(client, txn, 2, 2);
-        //if (!b2) return std::move(b2).status();
-        //std::int64_t transfer_amount = 200000;
-        std::int64_t age_gap = 100;
+        std::int64_t id = 1;
+        auto defaultAge = get_default_age(client, txn, id);
+        if (!defaultAge) return std::move(defaultAge).status();
+        auto age = get_current_age(client, txn, id);
+	
+	if(age) {
+             std::int64_t ageGap = *age - *defaultAge;
+	     if(ageGap != 100) {
+	     	return google::cloud::Status(
+		    google::cloud::StatusCode::kUnknown,
+		    "Age gap is wrong for Singer ID " + std::to_string(id)); 
+	     }
+	     std::cout << "No need to update for Singer ID " + std::to_string(id) + "\n";
+	     return spanner::Mutations{};
+	}
+	std::cout << "Update Age for Singer ID " + std::to_string(id) + "\n";
+        std::int64_t ageGap = 100;
         return spanner::Mutations{
             spanner::UpdateMutationBuilder(
                 "Singers", {"SingerId", "Age"})
-                .EmplaceRow(1, *b1 + age_gap)
+                .EmplaceRow(id, *defaultAge + ageGap)
                 .Build()};
       });
 
   if (!commit) throw std::runtime_error(commit.status().message());
-  std::cout << "Transfer was successful [spanner_read_write_transaction]\n";
+  
+  std::cout << "Update was successful [spanner_read_write_transaction]\n";
 }
 
 int main(int argc, char* argv[]) try {
