@@ -15,6 +15,7 @@
 #include "google/cloud/spanner/client.h"
 #include <iostream>
 #include <stdexcept>
+#include <chrono>
 
 const std::string kTableName = "Singers";
 const std::string kUpdateColumnName = "Age";
@@ -82,6 +83,19 @@ void ReadWriteTransaction(google::cloud::spanner::Client client) {
   std::cout << "Update was successful [spanner_read_write_transaction]\n";
 }
 
+void InsertData(google::cloud::spanner::Client client, std::int64_t singerId, std::int64_t albumId) {
+  namespace spanner = ::google::cloud::spanner;
+  auto insert_albums = spanner::InsertMutationBuilder(
+                           "Albums", {"SingerId", "AlbumId"})
+                           .EmplaceRow(singerId, albumId)
+                           .Build();
+  auto commit_result =
+      client.Commit(spanner::Mutations{insert_albums});
+  if (!commit_result) {
+    throw std::runtime_error(commit_result.status().message());
+  }
+}
+
 int main(int argc, char* argv[]) try {
   if (argc != 4) {
     std::cerr << "Usage: " << argv[0]
@@ -92,8 +106,21 @@ int main(int argc, char* argv[]) try {
   namespace spanner = ::google::cloud::spanner;
   spanner::Client client(
       spanner::MakeConnection(spanner::Database(argv[1], argv[2], argv[3])));
-  // DmlPartitionedUpdate(client);
-  ReadWriteTransaction(client);
+ 
+  auto start = std::chrono::high_resolution_clock::now();
+  
+  //ReadWriteTransaction(client);
+  std::int64_t singerId = 1;
+  std::int64_t albumId = 1;
+  for(int i = 0; i < 10000; i++) {
+     InsertData(client, singerId, albumId);
+     singerId ++;
+     albumId ++;
+  }
+  auto stop = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop-start);
+  std::cout << "Time taken for a read-write transaction is " << duration.count() 
+	  << " milliseconds" << std::endl;
   return 1;
   
   /* 
