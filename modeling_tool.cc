@@ -83,14 +83,24 @@ void ReadWriteTransaction(google::cloud::spanner::Client client) {
   std::cout << "Update was successful [spanner_read_write_transaction]\n";
 }
 
-void InsertData(google::cloud::spanner::Client client, std::int64_t singerId, std::int64_t albumId) {
+void batchInsertData(google::cloud::spanner::Client client, std::int64_t singerId, 
+		std::int64_t albumId, std::int64_t batchSize) {
   namespace spanner = ::google::cloud::spanner;
-  auto insert_albums = spanner::InsertMutationBuilder(
-                           "Albums", {"SingerId", "AlbumId"})
-                           .EmplaceRow(singerId, albumId)
-                           .Build();
-  auto commit_result =
-      client.Commit(spanner::Mutations{insert_albums});
+  using ::google::cloud::StatusOr;
+
+  auto commit_result = client.Commit(
+	[&client, &batchSize, &singerId, &albumId](
+		spanner::Transaction const& txn) -> StatusOr<spanner::Mutations> {
+        spanner::Mutations mutations; 
+        for(std::int64_t i = 0; i < batchSize; i++) {
+              mutations.push_back(spanner::InsertMutationBuilder(
+			    "Albums", {"SingerId", "AlbumId"})
+		            .EmplaceRow(singerId, albumId)
+			    .Build());
+              albumId++;
+        }
+	return mutations;
+      });
   if (!commit_result) {
     throw std::runtime_error(commit_result.status().message());
   }
@@ -112,14 +122,14 @@ int main(int argc, char* argv[]) try {
   //ReadWriteTransaction(client);
   std::int64_t singerId = 1;
   std::int64_t albumId = 1;
-  for(int i = 0; i < 10000; i++) {
-     InsertData(client, singerId, albumId);
-     singerId ++;
-     albumId ++;
+  std::int64_t batchSize = 1000;
+  for(; singerId <= 10; singerId++) {
+     batchInsertData(client, singerId, albumId, batchSize);
+     albumId += 1000;
   }
   auto stop = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop-start);
-  std::cout << "Time taken for a read-write transaction is " << duration.count() 
+  std::cout << "Time taken for 10 batch transaction insert of batchSize 1000 is " << duration.count() 
 	  << " milliseconds" << std::endl;
   return 1;
   
@@ -137,4 +147,4 @@ int main(int argc, char* argv[]) try {
   } catch (std::exception const& ex) {
   std::cerr << "Standard exception raised: " << ex.what() << "\n";
   return 1;
-}
+
