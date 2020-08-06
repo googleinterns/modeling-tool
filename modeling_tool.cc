@@ -83,23 +83,33 @@ void ReadWriteTransaction(google::cloud::spanner::Client client) {
   std::cout << "Update was successful [spanner_read_write_transaction]\n";
 }
 
-void batchInsertData(google::cloud::spanner::Client client, std::int64_t singerId, 
-		std::int64_t albumId, std::int64_t batchSize) {
+void batchUpdateData(google::cloud::spanner::Client client) {
   namespace spanner = ::google::cloud::spanner;
   using ::google::cloud::StatusOr;
-
+  
   auto commit_result = client.Commit(
-	[&client, &batchSize, &singerId, &albumId](
+	[&client](
 		spanner::Transaction const& txn) -> StatusOr<spanner::Mutations> {
-        spanner::Mutations mutations; 
-        for(std::int64_t i = 0; i < batchSize; i++) {
-              mutations.push_back(spanner::InsertMutationBuilder(
-			    "Albums", {"SingerId", "AlbumId"})
-		            .EmplaceRow(singerId, albumId)
+	//spanner::ReadOptions read_options;
+	//read_options.index_name = "AlbumsBySingerId";
+	
+  		spanner::ReadOptions read_options;
+  		read_options.limit = 1000;
+  		auto rows = client.Read("Albums", spanner::KeySet::All(),
+  			{"SingerId", "AlbumId"}, read_options);
+  		using RowType = std::tuple<std::int64_t, std::int64_t>;
+  		std::int64_t i = 0;
+  		spanner::Mutations mutations;
+  		for(auto const& row : spanner::StreamOf<RowType>(rows)) {
+       		     if(!row) throw std::runtime_error(row.status().message());
+       	             std::int64_t singerId = std::get<0>(*row);
+       		     std::int64_t albumId = std::get<1>(*row);
+                     mutations.push_back(spanner::UpdateMutationBuilder(
+			    "Albums", {"SingerId", "AlbumId", "Value"})
+		            .EmplaceRow(singerId, albumId, singerId+albumId)
 			    .Build());
-              albumId++;
-        }
-	return mutations;
+                 }
+		return mutations;
       });
   if (!commit_result) {
     throw std::runtime_error(commit_result.status().message());
@@ -119,32 +129,15 @@ int main(int argc, char* argv[]) try {
  
   auto start = std::chrono::high_resolution_clock::now();
   
-  //ReadWriteTransaction(client);
-  std::int64_t singerId = 1;
-  std::int64_t albumId = 1;
-  std::int64_t batchSize = 1000;
-  for(; singerId <= 10; singerId++) {
-     batchInsertData(client, singerId, albumId, batchSize);
-     albumId += 1000;
-  }
+  batchUpdateData(client);
+  
   auto stop = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop-start);
-  std::cout << "Time taken for 10 batch transaction insert of batchSize 1000 is " << duration.count() 
+  std::cout << "Time taken for 1 batch transaction update of batchSize 1000 is " << duration.count() 
 	  << " milliseconds" << std::endl;
   return 1;
-  
-  /* 
-  auto rows =
-      client.ExecuteQuery(spanner::SqlStatement("SELECT 'Hello World'"));
-
-  for (auto const& row : spanner::StreamOf<std::tuple<std::string>>(rows)) {
-    if (!row) throw std::runtime_error(row.status().message());
-    std::cout << std::get<0>(*row) << "\n";
-  }
-
-  return 0;
-  */
   } catch (std::exception const& ex) {
   std::cerr << "Standard exception raised: " << ex.what() << "\n";
   return 1;
+  }
 
