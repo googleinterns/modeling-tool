@@ -52,9 +52,13 @@ void batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
     spanner::Timestamp trainingTime = std::get<1>(*row);
     auto expirationTime = get_expiration_time(readClient, cdsId);
     if(!expirationTime) {
+      spanner::sys_time<std::chrono::nanoseconds> expirationNS = 
+        trainingTime.get<spanner::sys_time<std::chrono::nanoseconds>>().value()
+        + 60*std::chrono::hours(24);
+      spanner::Timestamp newExpirationTime = spanner::MakeTimestamp(expirationNS).value();
       mutations.push_back(spanner::UpdateMutationBuilder(
 		  "TestModels", {"CdsId", "ExpirationTime", "TrainingTime"})
-		  .EmplaceRow(cdsId, trainingTime, trainingTime)
+		  .EmplaceRow(cdsId, newExpirationTime, trainingTime)
 		  .Build());
 
       if(i % batchSize == 0) {
