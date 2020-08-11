@@ -22,94 +22,51 @@ namespace spanner = ::google::cloud::spanner;
 using google::cloud::StatusOr;
 
 const std::int64_t DEFAULTGAP = 100;
-const std::int64_t BATCHSIZE = 1000;
-
-void ReadWriteTransaction(spanner::Client client) {
-  // A helper to read a single Singers DefaultAge.
-  const auto& get_default_age =
-      [](spanner::Client client, spanner::Transaction txn,
-         std::int64_t id) -> StatusOr<std::int64_t> {
-    auto key = spanner::KeySet().AddKey(spanner::MakeKey(id));
-    auto rows = client.Read(std::move(txn), "Singers", std::move(key),
-                            {"DefaultAge"});
-    using RowType = std::tuple<std::int64_t>;
-    auto row = spanner::GetSingularRow(spanner::StreamOf<RowType>(rows));
-    if (!row) return std::move(row).status();
-    return std::get<0>(*std::move(row));
-  };
-
-  // A helper to read a single Singers Age
-  const auto& get_current_age =
-      [](spanner::Client client, spanner::Transaction txn,
-         std::int64_t id) -> StatusOr<std::int64_t> {
-    auto key = spanner::KeySet().AddKey(spanner::MakeKey(id));
-    auto rows = client.Read(std::move(txn), "Singers", std::move(key),
-                            {"Age"});
-    using RowType = std::tuple<std::int64_t>;
-    auto row = spanner::GetSingularRow(spanner::StreamOf<RowType>(rows));
-    if (!row) return std::move(row).status();
-    return std::get<0>(*std::move(row));
-  };
-
-  auto commit = client.Commit(
-      [&client, &get_default_age, &get_current_age](
-          spanner::Transaction const& txn) -> StatusOr<spanner::Mutations> {
-        std::int64_t id = 1;
-        auto defaultAge = get_default_age(client, txn, id);
-        if (!defaultAge) return std::move(defaultAge).status();
-        auto age = get_current_age(client, txn, id);
-	
-	if(age) {
-      std::int64_t ageGap = *age - *defaultAge;
-	    if(ageGap != DEFAULTGAP) {
-	     	return google::cloud::Status(
-		    google::cloud::StatusCode::kUnknown,
-		    "Age gap is wrong for Singer ID " + std::to_string(id)); 
-	    }
-	    std::cout << "No need to update for Singer ID " + std::to_string(id) + "\n";
-	    return spanner::Mutations{};
-	}
-	std::cout << "Update Age for Singer ID " + std::to_string(id) + "\n";
-        std::int64_t ageGap = 100;
-        return spanner::Mutations{
-            spanner::UpdateMutationBuilder(
-                "Singers", {"SingerId", "Age"})
-                .EmplaceRow(id, *defaultAge + ageGap)
-                .Build()};
-      });
-
-  if (!commit) throw std::runtime_error(commit.status().message());
-  
-  std::cout << "Update was successful [spanner_read_write_transaction]\n";
-}
+const std::int64_t BATCHSIZE = 2;
 
 void batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
            std::int64_t batchSize)  {
-  auto rows = readClient.Read("Albums", spanner::KeySet::All(),
-  		{"SingerId", "AlbumId"});
-  using RowType = std::tuple<std::int64_t, std::int64_t>;
-  
+  auto rows = readClient.Read("TestModels", spanner::KeySet::All(),
+  		{"CdsId", "TrainingTime"});
+  using RowType = std::tuple<std::int64_t, spanner::Timestamp>;
+
+  // A helper to read a single Timestamp.
+  const auto& get_expiration_time =
+      [](spanner::Client client, std::int64_t cdsId) 
+      -> StatusOr<spanner::Timestamp> {
+    auto key = spanner::KeySet().AddKey(spanner::MakeKey(cdsId));
+    auto rows = client.Read("TestModels", std::move(key),
+                            {"ExpirationTime"});
+    using RowType = std::tuple<spanner::Timestamp>;
+    auto row = spanner::GetSingularRow(spanner::StreamOf<RowType>(rows));
+    if (!row) return std::move(row).status();
+    return std::get<0>(*std::move(row));
+  };  
+
   spanner::Mutations mutations;
   std::int64_t i = 0;
   for(const auto& row : spanner::StreamOf<RowType>(rows)) {
     if(!row) throw std::runtime_error(row.status().message());
     i += 1;
-    std::int64_t singerId = std::get<0>(*row);
-    std::int64_t albumId = std::get<1>(*row);
-    
-    mutations.push_back(spanner::UpdateMutationBuilder(
-		"Albums", {"SingerId", "AlbumId", "Value"})
-		.EmplaceRow(singerId, albumId, singerId+albumId)
-		.Build());
+    std::int64_t cdsId = std::get<0>(*row);
+    spanner::Timestamp trainingTime = std::get<1>(*row);
+    auto expirationTime = get_expiration_time(readClient, cdsId);
+    if(!expirationTime) {
+      mutations.push_back(spanner::UpdateMutationBuilder(
+		  "TestModels", {"CdsId", "ExpirationTime", "TrainingTime"})
+		  .EmplaceRow(cdsId, trainingTime, trainingTime)
+		  .Build());
 
-    if(i % batchSize == 0) {
-    	auto commit_result = writeClient.Commit(mutations);
-    	if (!commit_result) {
-     	 throw std::runtime_error(commit_result.status().message());
-   	}
-	    mutations.clear();
-	    i = 0;
+      if(i % batchSize == 0) {
+    	  auto commit_result = writeClient.Commit(mutations);
+    	  if (!commit_result) {
+     	    throw std::runtime_error(commit_result.status().message());
+   	    }
+	      mutations.clear();
+	      i = 0;
+      }
     }
+    // else: check validity
   }
 }
 } // namespace
