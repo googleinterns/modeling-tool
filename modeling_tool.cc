@@ -22,7 +22,7 @@ namespace spanner = ::google::cloud::spanner;
 using google::cloud::StatusOr;
 
 const std::int64_t DEFAULTGAP = 100;
-const std::int64_t BATCHSIZE = 10000;
+const std::int64_t BATCHSIZE = 1000;
 
 void batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
            std::int64_t batchSize)  {
@@ -113,8 +113,8 @@ int main(int argc, char* argv[]) try {
   
   auto start = std::chrono::high_resolution_clock::now();
   
-  // batchUpdateData(readClient, writeClient, BATCHSIZE);
-  batchInsertData(writeClient, BATCHSIZE);
+  batchUpdateData(readClient, writeClient, BATCHSIZE);
+  // batchInsertData(writeClient, BATCHSIZE);
   auto stop = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop-start);
   std::cout << 
