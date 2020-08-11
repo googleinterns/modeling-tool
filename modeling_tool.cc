@@ -22,7 +22,7 @@ namespace spanner = ::google::cloud::spanner;
 using google::cloud::StatusOr;
 
 const std::int64_t DEFAULTGAP = 100;
-const std::int64_t BATCHSIZE = 2;
+const std::int64_t BATCHSIZE = 10000;
 
 void batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
            std::int64_t batchSize)  {
@@ -73,6 +73,30 @@ void batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
     // else: check validity
   }
 }
+
+void batchInsertData(google::cloud::spanner::Client client, std::int64_t batchSize) {
+  namespace spanner = ::google::cloud::spanner;
+  using ::google::cloud::StatusOr;
+
+  auto commit_result = client.Commit(
+	[&client, &batchSize](
+		spanner::Transaction const& txn) -> StatusOr<spanner::Mutations> {
+        spanner::Mutations mutations; 
+        spanner::sys_time<std::chrono::nanoseconds> trainingNS = std::chrono::system_clock::now(); 
+        spanner::Timestamp trainingTime = spanner::MakeTimestamp(trainingNS).value();
+        for(std::int64_t i = 3; i <= batchSize; i++) {
+            mutations.push_back(spanner::InsertMutationBuilder(
+			      "TestModels", {"CdsId", "TrainingTime"})
+		        .EmplaceRow(i, trainingTime)
+			      .Build());
+        }
+	      return mutations;
+      });
+  if (!commit_result) {
+    throw std::runtime_error(commit_result.status().message());
+  }
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) try {
@@ -89,13 +113,12 @@ int main(int argc, char* argv[]) try {
   
   auto start = std::chrono::high_resolution_clock::now();
   
-  batchUpdateData(readClient, writeClient, BATCHSIZE);
-  
+  // batchUpdateData(readClient, writeClient, BATCHSIZE);
+  batchInsertData(writeClient, BATCHSIZE);
   auto stop = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop-start);
   std::cout << 
-  "Time taken for 10 batch transaction update of batchSize " << BATCHSIZE 
-    << "is " << duration.count() << " milliseconds" << std::endl;
+  "Time taken : " << duration.count() << " milliseconds" << std::endl;
   return 1;
   } catch (std::exception const& ex) {
   std::cerr << "Standard exception raised: " << ex.what() << "\n";
