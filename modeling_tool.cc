@@ -50,8 +50,8 @@ void batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
     i += 1;
     std::int64_t cdsId = std::get<0>(*row);
     spanner::Timestamp trainingTime = std::get<1>(*row);
-    auto expirationTime = get_expiration_time(readClient, cdsId);
-    if(!expirationTime) {
+    // auto expirationTime = get_expiration_time(readClient, cdsId);
+    // if(!expirationTime) {
       spanner::sys_time<std::chrono::nanoseconds> expirationNS = 
         trainingTime.get<spanner::sys_time<std::chrono::nanoseconds>>().value()
         + 60*std::chrono::hours(24);
@@ -69,7 +69,7 @@ void batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
 	      mutations.clear();
 	      i = 0;
       }
-    }
+    // }
     // else: check validity
   }
 }
