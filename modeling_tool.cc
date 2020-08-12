@@ -24,11 +24,11 @@ using google::cloud::StatusOr;
 const std::int64_t DEFAULTGAP = 100;
 const std::int64_t BATCHSIZE = 1000;
 
-void batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
+int batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
            std::int64_t batchSize)  {
   auto rows = readClient.Read("TestModels", spanner::KeySet::All(),
   		{"CdsId", "ExpirationTime", "TrainingTime"});
-
+  int updatedRecord = 0; 
   spanner::Mutations mutations;
   std::int64_t i = 0;
   for(const auto& row : rows) {
@@ -65,16 +65,25 @@ void batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
 		  .Build());
       
       ++i;
-      if(i % batchSize == 0) {
+      if(i%batchSize == 0) {
     	  auto commit_result = writeClient.Commit(mutations);
     	  if (!commit_result) {
      	    throw std::runtime_error(commit_result.status().message());
    	    }
+        updatedRecord += mutations.size();
 	      mutations.clear();
 	      i = 0;
       }
     }
   }
+  if(!mutations.empty()) {
+    auto commit_result = writeClient.Commit(mutations);
+    if (!commit_result) {
+     	throw std::runtime_error(commit_result.status().message());
+   	}
+    updatedRecord += mutations.size();
+  }
+  return updatedRecord;
 }
 
 void batchInsertData(google::cloud::spanner::Client client, std::int64_t batchSize) {
@@ -116,12 +125,14 @@ int main(int argc, char* argv[]) try {
   
   auto start = std::chrono::high_resolution_clock::now();
   
-  batchUpdateData(readClient, writeClient, BATCHSIZE);
+  int updatedRecord = batchUpdateData(readClient, writeClient, BATCHSIZE);
   // batchInsertData(writeClient, BATCHSIZE);
   auto stop = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop-start);
   std::cout << 
   "Time taken : " << duration.count() << " milliseconds" << std::endl;
+  std::cout << 
+  "Total updated records : " << updatedRecord << " milliseconds" << std::endl;
   return 1;
   } catch (std::exception const& ex) {
   std::cerr << "Standard exception raised: " << ex.what() << "\n";
