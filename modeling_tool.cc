@@ -27,40 +27,44 @@ const std::int64_t BATCHSIZE = 1000;
 void batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
            std::int64_t batchSize)  {
   auto rows = readClient.Read("TestModels", spanner::KeySet::All(),
-  		{"CdsId", "TrainingTime"});
-  using RowType = std::tuple<std::int64_t, spanner::Timestamp>;
-
-  // A helper to read a single Timestamp.
-  const auto& get_expiration_time =
-      [](spanner::Client client, std::int64_t cdsId) 
-      -> StatusOr<spanner::Timestamp> {
-    auto key = spanner::KeySet().AddKey(spanner::MakeKey(cdsId));
-    auto rows = client.Read("TestModels", std::move(key),
-                            {"ExpirationTime"});
-    using RowType = std::tuple<spanner::Timestamp>;
-    auto row = spanner::GetSingularRow(spanner::StreamOf<RowType>(rows));
-    if (!row) return std::move(row).status();
-    return std::get<0>(*std::move(row));
-  };  
+  		{"CdsId", "ExpirationTime", "TrainingTime"});
 
   spanner::Mutations mutations;
   std::int64_t i = 0;
-  for(const auto& row : spanner::StreamOf<RowType>(rows)) {
+  for(const auto& row : rows) {
     if(!row) throw std::runtime_error(row.status().message());
-    i += 1;
-    std::int64_t cdsId = std::get<0>(*row);
-    spanner::Timestamp trainingTime = std::get<1>(*row);
-    // auto expirationTime = get_expiration_time(readClient, cdsId);
-    // if(!expirationTime) {
+    
+    spanner::Value cds = (*row).get(0).value();
+    spanner::Value expiration = (*row).get(1).value();
+    spanner::Value training = (*row).get(2).value();
+
+    std::int64_t cdsId = cds.get<std::int64_t>().value();
+    StatusOr<spanner::Timestamp> expirationTime = expiration.get<spanner::Timestamp>();
+    StatusOr<spanner::Timestamp> trainingTime = training.get<spanner::Timestamp>();
+    
+    if(!trainingTime) {
+      throw std::runtime_error("TrainingTime shouldn't be null.");
+    }
+    if(expirationTime) {
+      spanner::sys_time<std::chrono::nanoseconds> trainingNS = 
+        (*expirationTime).get<spanner::sys_time<std::chrono::nanoseconds>>().value()
+        - 60*std::chrono::hours(24);
+      spanner::Timestamp supposedTraining = spanner::MakeTimestamp(trainingNS).value();
+      if(*trainingTime != supposedTraining) {
+        throw std::runtime_error("Time gap for " + std::to_string(cdsId) + " is not correct.");
+      }
+    }
+    else {
       spanner::sys_time<std::chrono::nanoseconds> expirationNS = 
-        trainingTime.get<spanner::sys_time<std::chrono::nanoseconds>>().value()
+        (*trainingTime).get<spanner::sys_time<std::chrono::nanoseconds>>().value()
         + 60*std::chrono::hours(24);
-      spanner::Timestamp newExpirationTime = spanner::MakeTimestamp(expirationNS).value();
+      spanner::Timestamp newExpiration = spanner::MakeTimestamp(expirationNS).value();
       mutations.push_back(spanner::UpdateMutationBuilder(
 		  "TestModels", {"CdsId", "ExpirationTime", "TrainingTime"})
-		  .EmplaceRow(cdsId, newExpirationTime, trainingTime)
+		  .EmplaceRow(cdsId, newExpiration, *trainingTime)
 		  .Build());
-
+      
+      ++i;
       if(i % batchSize == 0) {
     	  auto commit_result = writeClient.Commit(mutations);
     	  if (!commit_result) {
@@ -69,8 +73,7 @@ void batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
 	      mutations.clear();
 	      i = 0;
       }
-    // }
-    // else: check validity
+    }
   }
 }
 
