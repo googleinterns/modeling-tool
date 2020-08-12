@@ -21,12 +21,13 @@ namespace {
 namespace spanner = ::google::cloud::spanner;
 using google::cloud::StatusOr;
 
-const std::int64_t DEFAULTGAP = 100;
-const std::int64_t BATCHSIZE = 1000;
+const std::int64_t DAYINTERVAL = 60; 
+const std::int64_t BATCHSIZE = 1000; // mutations per commit 
+const std::string TABLE = "TestModels";
 
 int batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
            std::int64_t batchSize)  {
-  auto rows = readClient.Read("TestModels", spanner::KeySet::All(),
+  auto rows = readClient.Read(TABLE, spanner::KeySet::All(),
   		{"CdsId", "ExpirationTime", "TrainingTime"});
   int updatedRecord = 0; 
   spanner::Mutations mutations;
@@ -48,7 +49,7 @@ int batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
     if(expirationTime) {
       spanner::sys_time<std::chrono::nanoseconds> trainingNS = 
         (*expirationTime).get<spanner::sys_time<std::chrono::nanoseconds>>().value()
-        - 60*std::chrono::hours(24);
+        - DAYINTERVAL*std::chrono::hours(24);
       spanner::Timestamp supposedTraining = spanner::MakeTimestamp(trainingNS).value();
       if(*trainingTime != supposedTraining) {
         throw std::runtime_error("Time gap for " + std::to_string(cdsId) + " is not correct.");
@@ -57,10 +58,10 @@ int batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
     else {
       spanner::sys_time<std::chrono::nanoseconds> expirationNS = 
         (*trainingTime).get<spanner::sys_time<std::chrono::nanoseconds>>().value()
-        + 60*std::chrono::hours(24);
+        + DAYINTERVAL*std::chrono::hours(24);
       spanner::Timestamp newExpiration = spanner::MakeTimestamp(expirationNS).value();
       mutations.push_back(spanner::UpdateMutationBuilder(
-		  "TestModels", {"CdsId", "ExpirationTime", "TrainingTime"})
+		  TABLE, {"CdsId", "ExpirationTime", "TrainingTime"})
 		  .EmplaceRow(cdsId, newExpiration, *trainingTime)
 		  .Build());
       
