@@ -1,6 +1,6 @@
 .build/
 .vscode/
-.bazel?bin/
-.bazel?modeling?tool/
-.bazel?out/
-.bazel?testlogs/
+.bazel\-bin/
+.bazel\-modeling\-tool/
+.bazel\-out/
+.bazel\-testlogs/
