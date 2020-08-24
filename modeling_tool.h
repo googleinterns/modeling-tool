@@ -44,12 +44,10 @@ int batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
     std::int64_t cdsId = cds.get<std::int64_t>().value();
     StatusOr<spanner::Timestamp> expirationTime = expiration.get<spanner::Timestamp>();
     StatusOr<spanner::Timestamp> trainingTime = training.get<spanner::Timestamp>();
-    std::cout << "line 45" << std::endl;
     if(!trainingTime) {
       throw std::runtime_error("TrainingTime shouldn't be null.");
     }
     if(expirationTime) {
-      std::cout << "line 50" << std::endl;
       spanner::sys_time<std::chrono::nanoseconds> trainingNS = 
         (*expirationTime).get<spanner::sys_time<std::chrono::nanoseconds>>().value()
         - DAYINTERVAL*std::chrono::hours(24);
@@ -59,7 +57,6 @@ int batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
       }
     }
     else {
-      std::cout << "line 60" << std::endl;
       spanner::sys_time<std::chrono::nanoseconds> expirationNS = 
         (*trainingTime).get<spanner::sys_time<std::chrono::nanoseconds>>().value()
         + DAYINTERVAL*std::chrono::hours(24);
@@ -70,11 +67,9 @@ int batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
 		  .Build());
       ++i;
       if(i%batchSize == 0) {
-          std::cout << "line 71" << std::endl;
           writeClient.Commit(mutations);
     	  auto commit_result = writeClient.Commit(mutations);
     	  if (!commit_result) {
-            std::cout << "line 75" << std::endl;
      	    throw std::runtime_error(commit_result.status().message());
             }
         updatedRecord += mutations.size();
@@ -84,7 +79,6 @@ int batchUpdateData(spanner::Client readClient, spanner::Client writeClient,
     }
   }
   if(!mutations.empty()) {
-    std::cout << "line 83" << std::endl;
     auto commit_result = writeClient.Commit(mutations);
     if (!commit_result) {
      	throw std::runtime_error(commit_result.status().message());
