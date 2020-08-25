@@ -8,8 +8,9 @@
 namespace {
 using ::testing::_;
 using ::testing::Return;
-namespace spanner = ::google::cloud::spanner;
+using ::testing::Field;
 using google::cloud::StatusOr;
+namespace spanner = ::google::cloud::spanner;
 
 class ModelingToolTest : public ::testing::Test {
   protected:
@@ -37,12 +38,14 @@ class ModelingToolTest : public ::testing::Test {
   })pb";
   static google::spanner::v1::ResultSetMetadata metadata;
   static const std::int64_t DAYINTERVAL = 60;
+  static const std::string TABLE;
   static std::shared_ptr<google::cloud::spanner_mocks::MockConnection> readConn;
   static std::shared_ptr<google::cloud::spanner_mocks::MockConnection> writeConn;
 };
 
 google::spanner::v1::ResultSetMetadata ModelingToolTest::metadata;
 const std::int64_t ModelingToolTest::DAYINTERVAL;
+const std::string ModelingToolTest::TABLE = "TestModels";
 std::shared_ptr<google::cloud::spanner_mocks::MockConnection> ModelingToolTest::readConn = nullptr;
 std::shared_ptr<google::cloud::spanner_mocks::MockConnection> ModelingToolTest::writeConn = nullptr;
 
@@ -74,14 +77,31 @@ TEST_F(ModelingToolTest, SuccessfulBatchUpdate) {
         return spanner::RowStream(std::move(source));
         });
     // Setup the connection mock to return values for Commit():
-    EXPECT_CALL(*writeConn, Commit(_))
-        .WillOnce([](spanner::Connection::CommitParams const&)
+    spanner::sys_time<std::chrono::nanoseconds> expirationNS = 
+        trainingNS + DAYINTERVAL*std::chrono::hours(24);
+    spanner::Timestamp newExpiration = spanner::MakeTimestamp(expirationNS).value();
+    spanner::Mutations updates;
+    updates.push_back(spanner::UpdateMutationBuilder(
+		  TABLE, {"CdsId", "ExpirationTime", "TrainingTime"})
+		  .EmplaceRow(spanner::Value(1), newExpiration, timestamp)
+		  .Build());
+
+    // spanner::Connection::CommitParams params{spanner::Transaction(spanner::Transaction::ReadWriteOptions()), updates};
+    EXPECT_CALL(*writeConn, Commit(Field(&spanner::Connection::CommitParams::mutations, updates)))
+        .WillRepeatedly([](spanner::Connection::CommitParams const&)
                     -> StatusOr<spanner::CommitResult> {
         spanner::sys_time<std::chrono::nanoseconds> commitNS = std::chrono::system_clock::now();
         spanner::Timestamp commitTimestamp = spanner::MakeTimestamp(commitNS).value();
         spanner::CommitResult res{commitTimestamp};
         return StatusOr<spanner::CommitResult>(res);
-        })
+        });
+
+    updates.clear();
+    updates.push_back(spanner::UpdateMutationBuilder(
+		  TABLE, {"CdsId", "ExpirationTime", "TrainingTime"})
+		  .EmplaceRow(spanner::Value(2), newExpiration, timestamp)
+		  .Build());
+    EXPECT_CALL(*writeConn, Commit(Field(&spanner::Connection::CommitParams::mutations, updates)))
         .WillRepeatedly([](spanner::Connection::CommitParams const&)
                     -> StatusOr<spanner::CommitResult> {
         spanner::sys_time<std::chrono::nanoseconds> commitNS = std::chrono::system_clock::now();
@@ -93,22 +113,8 @@ TEST_F(ModelingToolTest, SuccessfulBatchUpdate) {
     // Create clients with the mocked connection:
     spanner::Client readClient(readConn);
     spanner::Client writeClient(writeConn);
-    /////////////////////////////////1. should update all records
+    // Should update all records
     EXPECT_EQ(2, modelingtool::batchUpdateData(readClient, writeClient, 1));
-    /*
-    auto rows = readClient.Read("TestModels", spanner::KeySet::All(),
-       {"CdsId", "ExpirationTime", "TrainingTime"});
-    int count = 0;
-    for (auto const& row : rows) {
-        ASSERT_TRUE(row);
-        auto expected_id = ++count;
-        spanner::Value cds = (*row).get(0).value();
-        spanner::Value expiration = (*row).get(1).value();
-        spanner::Value training = (*row).get(2).value();
-        EXPECT_EQ(expected_id, cds.get<std::int64_t>().value());
-        EXPECT_EQ(spanner::MakeNullValue<spanner::Timestamp>(), expiration);
-        EXPECT_EQ(spanner::Value(timestamp), training);
-    }*/
 }
 
 TEST_F(ModelingToolTest, NoUpdateWhenFieldCheckPassed) {
@@ -142,7 +148,7 @@ TEST_F(ModelingToolTest, NoUpdateWhenFieldCheckPassed) {
     // Create clients with the mocked connection:
     spanner::Client readClient(readConn);
     spanner::Client writeClient(writeConn);
-    /////////////////////////////////2. should not update any records
+    // Should not update any records
     EXPECT_EQ(0, modelingtool::batchUpdateData(readClient, writeClient, 1));
 }
 
@@ -165,7 +171,7 @@ TEST_F(ModelingToolTest, ThrowErrorWhenTimeGapWrong) {
                     -> spanner::RowStream {
         return spanner::RowStream(std::move(sourceIncorrect));
         });
-    /////////////////////////////////3. should throw std::runtime_error
+    // Should throw std::runtime_error
     try {
         // Create clients with the mocked connection:
         spanner::Client readClient(readConn);
@@ -200,7 +206,7 @@ TEST_F(ModelingToolTest, ThrowErrorWhenRequiredFieldIsNull) {
                     -> spanner::RowStream {
         return spanner::RowStream(std::move(sourceNull));
         });
-    /////////////////////////////////4. should throw std::runtime_error
+    // Should throw std::runtime_error
     try {
         // Create clients with the mocked connection:
         spanner::Client readClient(readConn);
