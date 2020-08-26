@@ -28,8 +28,8 @@ const char* COLUMNS[] = {"CdsId",  "ExpirationTime", "TrainingTime"};
 const std::int64_t DAYINTERVAL = 60; 
 const std::string TABLE = "TestModels";
 
-StatusOr<std::int64_t> batchUpdateData(const spanner::Client& readClient, 
-                                       const spanner::Client& writeClient, std::int64_t batchSize)  {
+StatusOr<std::int64_t> batchUpdateData(spanner::Client& readClient, 
+                                       spanner::Client& writeClient, std::int64_t batchSize)  {
   std::vector<std::string> columnNames;
   for(const auto *column : COLUMNS) {
     std::string str(column);
@@ -94,14 +94,14 @@ StatusOr<std::int64_t> batchUpdateData(const spanner::Client& readClient,
   return StatusOr<std::int64_t>(updatedRecord);
 }
 
-google::cloud::Status batchInsertData(const spanner::Client& client, std::int64_t batchSize) {
+google::cloud::Status batchInsertData(spanner::Client& client, std::int64_t batchSize) {
   std::vector<std::string> columnNames;
   for(const auto *column : COLUMNS) {
     std::string str(column);
     columnNames.push_back(str);
   }    
   const auto& commitResult = client.Commit(
-	[&client, &batchSize](
+	[&client, &batchSize, &columnNames](
 		spanner::Transaction const& txn) -> StatusOr<spanner::Mutations> {
         spanner::Mutations mutations; 
         spanner::sys_time<std::chrono::nanoseconds> trainingNS = std::chrono::system_clock::now(); 
@@ -116,6 +116,7 @@ google::cloud::Status batchInsertData(const spanner::Client& client, std::int64_
   if (!commitResult) return google::cloud::Status(
                         google::cloud::StatusCode::kUnknown,
                         "Commit Error:" + commitResult.status().message());
+  return google::cloud::Status();
 }
 } // namespace modeling_tool
 

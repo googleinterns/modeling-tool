@@ -19,6 +19,7 @@ class ModelingToolTest : public ::testing::Test {
     // Create mocks for `spanner::Connection`:
     readConn = std::make_shared<google::cloud::spanner_mocks::MockConnection>();
     writeConn = std::make_shared<google::cloud::spanner_mocks::MockConnection>();
+    const char* COLUMNS[] = {"CdsId",  "ExpirationTime", "TrainingTime"};
     for(const auto *column : COLUMNS) {
       std::string str(column);
       columnNames.push_back(str);
@@ -43,7 +44,6 @@ class ModelingToolTest : public ::testing::Test {
   static google::spanner::v1::ResultSetMetadata metadata;
   static const std::int64_t DAYINTERVAL = 60;
   static const std::string TABLE;
-  static const char* COLUMNS[] = {"CdsId",  "ExpirationTime", "TrainingTime"};
   static std::vector<std::string> columnNames;
   static std::shared_ptr<google::cloud::spanner_mocks::MockConnection> readConn;
   static std::shared_ptr<google::cloud::spanner_mocks::MockConnection> writeConn;
@@ -184,7 +184,7 @@ TEST_F(ModelingToolTest, ErrorWhenTimeGapWrong) {
     // Should return error status
     EXPECT_EQ(false, updatedRecord.status().ok());
     EXPECT_EQ(google::cloud::StatusCode::kFailedPrecondition, updatedRecord.status().code());
-    EXPECT_EQ("TrainingTime shouldn't be null.", updatedRecord.status().message());
+    EXPECT_EQ("Time gap for 1 is not correct.", updatedRecord.status().message());
 }
 
 TEST_F(ModelingToolTest, ErrorWhenRequiredFieldIsNull) {
@@ -213,6 +213,6 @@ TEST_F(ModelingToolTest, ErrorWhenRequiredFieldIsNull) {
     // Should return error status
     EXPECT_EQ(false, updatedRecord.status().ok());
     EXPECT_EQ(google::cloud::StatusCode::kFailedPrecondition, updatedRecord.status().code());
-    EXPECT_EQ("Time gap for 1 is not correct.", updatedRecord.status().message());
+    EXPECT_EQ("TrainingTime shouldn't be null.", updatedRecord.status().message());
 }
 }  // namespace modeling_tool 
