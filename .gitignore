@@ -1,0 +1,8 @@
+# build output directory names
+.build/
+
+# IDE files
+.vscode/
+
+# common bazel output directories
+bazel-*
