@@ -5,11 +5,11 @@
 #include "google/cloud/spanner/mocks/mock_spanner_connection.h"
 #include <google/protobuf/text_format.h>
 
-namespace {
+namespace modeling_tool {
 using ::testing::_;
 using ::testing::Return;
 using ::testing::Field;
-using google::cloud::StatusOr;
+using ::google::cloud::StatusOr;
 namespace spanner = ::google::cloud::spanner;
 
 class ModelingToolTest : public ::testing::Test {
@@ -19,6 +19,11 @@ class ModelingToolTest : public ::testing::Test {
     // Create mocks for `spanner::Connection`:
     readConn = std::make_shared<google::cloud::spanner_mocks::MockConnection>();
     writeConn = std::make_shared<google::cloud::spanner_mocks::MockConnection>();
+    const char* COLUMNS[] = {"CdsId",  "ExpirationTime", "TrainingTime"};
+    for(const auto *column : COLUMNS) {
+      std::string str(column);
+      columnNames.push_back(str);
+    }                      
   }
 
   static const auto constexpr kText = R"pb(
@@ -39,6 +44,7 @@ class ModelingToolTest : public ::testing::Test {
   static google::spanner::v1::ResultSetMetadata metadata;
   static const std::int64_t DAYINTERVAL = 60;
   static const std::string TABLE;
+  static std::vector<std::string> columnNames;
   static std::shared_ptr<google::cloud::spanner_mocks::MockConnection> readConn;
   static std::shared_ptr<google::cloud::spanner_mocks::MockConnection> writeConn;
 };
@@ -46,6 +52,7 @@ class ModelingToolTest : public ::testing::Test {
 google::spanner::v1::ResultSetMetadata ModelingToolTest::metadata;
 const std::int64_t ModelingToolTest::DAYINTERVAL;
 const std::string ModelingToolTest::TABLE = "TestModels";
+std::vector<std::string> ModelingToolTest::columnNames;
 std::shared_ptr<google::cloud::spanner_mocks::MockConnection> ModelingToolTest::readConn = nullptr;
 std::shared_ptr<google::cloud::spanner_mocks::MockConnection> ModelingToolTest::writeConn = nullptr;
 
@@ -81,12 +88,10 @@ TEST_F(ModelingToolTest, SuccessfulBatchUpdate) {
         trainingNS + DAYINTERVAL*std::chrono::hours(24);
     spanner::Timestamp newExpiration = spanner::MakeTimestamp(expirationNS).value();
     spanner::Mutations updates;
-    updates.push_back(spanner::UpdateMutationBuilder(
-		  TABLE, {"CdsId", "ExpirationTime", "TrainingTime"})
+    updates.push_back(spanner::UpdateMutationBuilder(TABLE, columnNames)
 		  .EmplaceRow(spanner::Value(1), newExpiration, timestamp)
 		  .Build());
 
-    // spanner::Connection::CommitParams params{spanner::Transaction(spanner::Transaction::ReadWriteOptions()), updates};
     EXPECT_CALL(*writeConn, Commit(Field(&spanner::Connection::CommitParams::mutations, updates)))
         .WillRepeatedly([](spanner::Connection::CommitParams const&)
                     -> StatusOr<spanner::CommitResult> {
@@ -97,8 +102,7 @@ TEST_F(ModelingToolTest, SuccessfulBatchUpdate) {
         });
 
     updates.clear();
-    updates.push_back(spanner::UpdateMutationBuilder(
-		  TABLE, {"CdsId", "ExpirationTime", "TrainingTime"})
+    updates.push_back(spanner::UpdateMutationBuilder(TABLE, columnNames)
 		  .EmplaceRow(spanner::Value(2), newExpiration, timestamp)
 		  .Build());
     EXPECT_CALL(*writeConn, Commit(Field(&spanner::Connection::CommitParams::mutations, updates)))
@@ -114,7 +118,8 @@ TEST_F(ModelingToolTest, SuccessfulBatchUpdate) {
     spanner::Client readClient(readConn);
     spanner::Client writeClient(writeConn);
     // Should update all records
-    EXPECT_EQ(2, modelingtool::batchUpdateData(readClient, writeClient, 1));
+    const auto& updatedRecord = batchUpdateData(readClient, writeClient, 1);
+    EXPECT_EQ(2, updatedRecord.value());
 }
 
 TEST_F(ModelingToolTest, NoUpdateWhenFieldCheckPassed) {
@@ -149,10 +154,11 @@ TEST_F(ModelingToolTest, NoUpdateWhenFieldCheckPassed) {
     spanner::Client readClient(readConn);
     spanner::Client writeClient(writeConn);
     // Should not update any records
-    EXPECT_EQ(0, modelingtool::batchUpdateData(readClient, writeClient, 1));
+    const auto& updatedRecord = batchUpdateData(readClient, writeClient, 1);
+    EXPECT_EQ(0, updatedRecord.value());
 }
 
-TEST_F(ModelingToolTest, ThrowErrorWhenTimeGapWrong) {
+TEST_F(ModelingToolTest, ErrorWhenTimeGapWrong) {
     // Setup a new mock source to return values for Read():
     auto sourceIncorrect =
       std::unique_ptr<google::cloud::spanner_mocks::MockResultSetSource>(
@@ -171,23 +177,17 @@ TEST_F(ModelingToolTest, ThrowErrorWhenTimeGapWrong) {
                     -> spanner::RowStream {
         return spanner::RowStream(std::move(sourceIncorrect));
         });
-    // Should throw std::runtime_error
-    try {
-        // Create clients with the mocked connection:
-        spanner::Client readClient(readConn);
-        spanner::Client writeClient(writeConn);
-        modelingtool::batchUpdateData(readClient, writeClient, 1);
-        FAIL() << "Expected std::runtime_error";
-    }
-    catch(std::runtime_error const & err) {
-        EXPECT_EQ(err.what(), std::string("Time gap for 1 is not correct."));
-    }
-    catch(...) {
-      FAIL() << "Expected std::runtime_error";
-    }
+    // Create clients with the mocked connection:
+    spanner::Client readClient(readConn);
+    spanner::Client writeClient(writeConn);
+    const auto& updatedRecord = batchUpdateData(readClient, writeClient, 1);
+    // Should return error status
+    EXPECT_EQ(false, updatedRecord.status().ok());
+    EXPECT_EQ(google::cloud::StatusCode::kFailedPrecondition, updatedRecord.status().code());
+    EXPECT_EQ("Time gap for 1 is not correct.", updatedRecord.status().message());
 }
 
-TEST_F(ModelingToolTest, ThrowErrorWhenRequiredFieldIsNull) {
+TEST_F(ModelingToolTest, ErrorWhenRequiredFieldIsNull) {
     // Setup a new mock source to return values for Read():
     auto sourceNull =
       std::unique_ptr<google::cloud::spanner_mocks::MockResultSetSource>(
@@ -206,19 +206,13 @@ TEST_F(ModelingToolTest, ThrowErrorWhenRequiredFieldIsNull) {
                     -> spanner::RowStream {
         return spanner::RowStream(std::move(sourceNull));
         });
-    // Should throw std::runtime_error
-    try {
-        // Create clients with the mocked connection:
-        spanner::Client readClient(readConn);
-        spanner::Client writeClient(writeConn);
-        modelingtool::batchUpdateData(readClient, writeClient, 1);
-        FAIL() << "Expected std::runtime_error";
-    }
-    catch(std::runtime_error const & err) {
-        EXPECT_EQ(err.what(), std::string("TrainingTime shouldn't be null."));
-    }
-    catch(...) {
-      FAIL() << "Expected std::runtime_error";
-    }
+    // Create clients with the mocked connection:
+    spanner::Client readClient(readConn);
+    spanner::Client writeClient(writeConn);
+    const auto& updatedRecord = batchUpdateData(readClient, writeClient, 1);
+    // Should return error status
+    EXPECT_EQ(false, updatedRecord.status().ok());
+    EXPECT_EQ(google::cloud::StatusCode::kFailedPrecondition, updatedRecord.status().code());
+    EXPECT_EQ("TrainingTime shouldn't be null.", updatedRecord.status().message());
 }
-}  // namespace
+}  // namespace modeling_tool 
