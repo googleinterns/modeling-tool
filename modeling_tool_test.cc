@@ -21,8 +21,7 @@ class ModelingToolTest : public ::testing::Test {
     writeConn = std::make_shared<google::cloud::spanner_mocks::MockConnection>();
     const char* COLUMNS[] = {"CdsId",  "ExpirationTime", "TrainingTime"};
     for(const auto *column : COLUMNS) {
-      std::string str(column);
-      columnNames.push_back(str);
+      columnNames.push_back(std::string(column));
     }                      
   }
 
