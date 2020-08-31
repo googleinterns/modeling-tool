@@ -22,12 +22,16 @@
 
 static const std::int64_t BATCHSIZE = 1000; // mutations per commit 
 
-int main(int argc, char* argv[]) try {
-  if (argc != 4) {
-    std::cerr << "Usage: " << argv[0]
+int main(int argc, char* argv[]) {
+  if(argc < 4) {
+    std::cerr << "Usage 1: " << argv[0]
               << " project-id instance-id database-id\n";
+    std::cerr << "Usage 2: " << argv[0]
+              << " project-id instance-id database-id --dry-run \n";              
     return 1;
   }
+  bool dryRun = false;
+  if(argc == 5) dryRun = true;
   namespace spanner = ::google::cloud::spanner;
 
   spanner::Client readClient(
@@ -37,19 +41,28 @@ int main(int argc, char* argv[]) try {
   
   auto start = std::chrono::high_resolution_clock::now();
   
-  const auto& updatedRecord = modeling_tool::batchUpdateData(readClient, writeClient, BATCHSIZE);
-  if(!updatedRecord) {
-    std::cerr << "Update error: " << updatedRecord.status().message() << "\n";
+  const auto& updateResult = modeling_tool::batchUpdateData(readClient, writeClient, BATCHSIZE, dryRun);
+  if(!updateResult) {
+    std::cerr << "Update error: " << updateResult.status().message() << "\n";
     return 1;
   }
   auto stop = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop-start);
+  // execution time
   std::cout << 
   "Time taken: " << duration.count() << " milliseconds" << std::endl;
+
+  // update stats
   std::cout << 
-  "Total updated records : " << updatedRecord.value() << std::endl;
-  return 1;
-  } catch (std::exception const& ex) {
-  std::cerr << "Standard exception raised: " << ex.what() << "\n";
-  return 1;
+   "Total records read : " << updateResult.value().first << std::endl;
+  if(dryRun) {
+    std::cout << 
+   "Total records that need to be updated : " << updateResult.value().second << std::endl; 
   }
+  else {
+    std::cout << 
+   "Total updated records : " << updateResult.value().second << std::endl;
+  }
+  
+  return 0;
+  } 
