@@ -28,22 +28,21 @@ const char* COLUMNS[] = {"CdsId",  "ExpirationTime", "TrainingTime"};
 const std::int64_t DAYINTERVAL = 60; 
 const std::string TABLE = "TestModels";
 
-StatusOr<std::int64_t> batchUpdateData(spanner::Client& readClient, 
-                                       spanner::Client& writeClient, std::int64_t batchSize)  {
+StatusOr<std::pair<std::int64_t, std::int64_t>> batchUpdateData
+                                      (spanner::Client& readClient, 
+                                       spanner::Client& writeClient, std::int64_t batchSize, bool dryRun)  {
   std::vector<std::string> columnNames;
   for(const auto *column : COLUMNS) {
-    std::string str(column);
-    columnNames.push_back(str);
+    columnNames.push_back(std::string(column));
   }                                       
   auto rows = readClient.Read(TABLE, spanner::KeySet::All(), columnNames);
-  int updatedRecord = 0; 
+  std::int64_t updatedRecord = 0; 
+  std::int64_t readRecord = 0;
   spanner::Mutations mutations;
   std::int64_t i = 0;
   for(const auto& row : rows) {
-    if(!row) return google::cloud::Status(
-              google::cloud::StatusCode::kUnknown,
-             "Read Error:" + row.status().message());
-    
+    if(!row) return row.status();
+    readRecord++;
     spanner::Value cds = row->get(0).value();
     spanner::Value expiration = row->get(1).value();
     spanner::Value training = row->get(2).value();
@@ -73,11 +72,10 @@ StatusOr<std::int64_t> batchUpdateData(spanner::Client& readClient,
 		  .Build());
       ++i;
       if(i%batchSize == 0) {
-          writeClient.Commit(mutations);
-    	  const auto& commitResult = writeClient.Commit(mutations);
-    	  if (!commitResult) return google::cloud::Status(
-                              google::cloud::StatusCode::kUnknown,
-                              "Commit Error:" + commitResult.status().message());
+        if(!dryRun) {
+          const auto& commitResult = writeClient.Commit(mutations);
+          if (!commitResult) return commitResult.status();
+        }
         updatedRecord += mutations.size();
 	      mutations.clear();
 	      i = 0;
@@ -85,38 +83,39 @@ StatusOr<std::int64_t> batchUpdateData(spanner::Client& readClient,
     }
   }
   if(!mutations.empty()) {
-    const auto& commitResult = writeClient.Commit(mutations);
-    if (!commitResult) return google::cloud::Status(
-                          google::cloud::StatusCode::kUnknown,
-                          "Commit Error:" + commitResult.status().message());
+    if(!dryRun) {
+      const auto& commitResult = writeClient.Commit(mutations);
+      if (!commitResult) return commitResult.status();
+    }
     updatedRecord += mutations.size();
   }
-  return StatusOr<std::int64_t>(updatedRecord);
+  std::pair<std::int64_t, std::int64_t> stats(readRecord, updatedRecord);
+  return StatusOr<std::pair<std::int64_t, std::int64_t>>(stats);
 }
 
-google::cloud::Status batchInsertData(spanner::Client& client, std::int64_t batchSize) {
+StatusOr<std::int64_t> batchInsertData(spanner::Client& client, std::int64_t batchSize, bool dryRun) {
+  if(dryRun) return StatusOr<std::int64_t>(batchSize);
+
   std::vector<std::string> columnNames;
   for(const auto *column : COLUMNS) {
-    std::string str(column);
-    columnNames.push_back(str);
-  }    
+    columnNames.push_back(std::string(column));
+  }
+  
   const auto& commitResult = client.Commit(
 	[&client, &batchSize, &columnNames](
 		spanner::Transaction const& txn) -> StatusOr<spanner::Mutations> {
         spanner::Mutations mutations; 
         spanner::sys_time<std::chrono::nanoseconds> trainingNS = std::chrono::system_clock::now(); 
         spanner::Timestamp trainingTime = spanner::MakeTimestamp(trainingNS).value();
-        for(std::int64_t i = 3; i <= batchSize; i++) {
+        for(std::int64_t i = 0; i <= batchSize; i++) {
             mutations.push_back(spanner::InsertMutationBuilder(TABLE, columnNames)
 		        .EmplaceRow(i, trainingTime)
 			      .Build());
         }
 	      return mutations;
       });
-  if (!commitResult) return google::cloud::Status(
-                        google::cloud::StatusCode::kUnknown,
-                        "Commit Error:" + commitResult.status().message());
-  return google::cloud::Status();
+  if(!commitResult) return commitResult.status();
+  return StatusOr<std::int64_t>(batchSize);
 }
 } // namespace modeling_tool
 
