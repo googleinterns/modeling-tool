@@ -155,7 +155,7 @@ TEST_F(ModelingToolTest, NoUpdateWhenFieldCheckPassed) {
     spanner::Client writeClient(writeConn);
     // Should not update any records
     const auto& updatedResult = batchUpdateData(readClient, writeClient, 1, false);
-    EXPECT_EQ(0, updatedResult.value().first);
+    EXPECT_EQ(2, updatedResult.value().first);
     EXPECT_EQ(0, updatedResult.value().second);
 }
 
