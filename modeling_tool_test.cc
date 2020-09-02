@@ -117,8 +117,9 @@ TEST_F(ModelingToolTest, SuccessfulBatchUpdate) {
     spanner::Client readClient(readConn);
     spanner::Client writeClient(writeConn);
     // Should update all records
-    const auto& updatedRecord = batchUpdateData(readClient, writeClient, 1);
-    EXPECT_EQ(2, updatedRecord.value());
+    const auto& updatedResult = batchUpdateData(readClient, writeClient, 1, false);
+    EXPECT_EQ(2, updatedResult.value().first);
+    EXPECT_EQ(2, updatedResult.value().second);
 }
 
 TEST_F(ModelingToolTest, NoUpdateWhenFieldCheckPassed) {
@@ -153,8 +154,9 @@ TEST_F(ModelingToolTest, NoUpdateWhenFieldCheckPassed) {
     spanner::Client readClient(readConn);
     spanner::Client writeClient(writeConn);
     // Should not update any records
-    const auto& updatedRecord = batchUpdateData(readClient, writeClient, 1);
-    EXPECT_EQ(0, updatedRecord.value());
+    const auto& updatedResult = batchUpdateData(readClient, writeClient, 1, false);
+    EXPECT_EQ(2, updatedResult.value().first);
+    EXPECT_EQ(0, updatedResult.value().second);
 }
 
 TEST_F(ModelingToolTest, ErrorWhenTimeGapWrong) {
@@ -179,11 +181,11 @@ TEST_F(ModelingToolTest, ErrorWhenTimeGapWrong) {
     // Create clients with the mocked connection:
     spanner::Client readClient(readConn);
     spanner::Client writeClient(writeConn);
-    const auto& updatedRecord = batchUpdateData(readClient, writeClient, 1);
+    const auto& updatedResult = batchUpdateData(readClient, writeClient, 1, false);
     // Should return error status
-    EXPECT_EQ(false, updatedRecord.status().ok());
-    EXPECT_EQ(google::cloud::StatusCode::kFailedPrecondition, updatedRecord.status().code());
-    EXPECT_EQ("Time gap for 1 is not correct.", updatedRecord.status().message());
+    EXPECT_EQ(false, updatedResult.status().ok());
+    EXPECT_EQ(google::cloud::StatusCode::kFailedPrecondition, updatedResult.status().code());
+    EXPECT_EQ("Time gap for 1 is not correct.", updatedResult.status().message());
 }
 
 TEST_F(ModelingToolTest, ErrorWhenRequiredFieldIsNull) {
@@ -208,10 +210,10 @@ TEST_F(ModelingToolTest, ErrorWhenRequiredFieldIsNull) {
     // Create clients with the mocked connection:
     spanner::Client readClient(readConn);
     spanner::Client writeClient(writeConn);
-    const auto& updatedRecord = batchUpdateData(readClient, writeClient, 1);
+    const auto& updatedResult = batchUpdateData(readClient, writeClient, 1, false);
     // Should return error status
-    EXPECT_EQ(false, updatedRecord.status().ok());
-    EXPECT_EQ(google::cloud::StatusCode::kFailedPrecondition, updatedRecord.status().code());
-    EXPECT_EQ("TrainingTime shouldn't be null.", updatedRecord.status().message());
+    EXPECT_EQ(false, updatedResult.status().ok());
+    EXPECT_EQ(google::cloud::StatusCode::kFailedPrecondition, updatedResult.status().code());
+    EXPECT_EQ("TrainingTime shouldn't be null.", updatedResult.status().message());
 }
 }  // namespace modeling_tool 
