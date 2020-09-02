@@ -19,7 +19,7 @@
 
 #include "google/cloud/spanner/client.h"
 
-
+namespace spanner = ::google::cloud::spanner;
 static const std::int64_t BATCHSIZE = 1000; // mutations per commit 
 
 int main(int argc, char* argv[]) {
@@ -32,7 +32,6 @@ int main(int argc, char* argv[]) {
   }
   bool dryRun = false;
   if(argc == 5) dryRun = true;
-  namespace spanner = ::google::cloud::spanner;
 
   spanner::Client readClient(
       spanner::MakeConnection(spanner::Database(argv[1], argv[2], argv[3])));

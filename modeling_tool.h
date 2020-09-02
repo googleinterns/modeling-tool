@@ -90,7 +90,7 @@ StatusOr<std::pair<std::int64_t, std::int64_t>> batchUpdateData
     updatedRecord += mutations.size();
   }
   std::pair<std::int64_t, std::int64_t> stats(readRecord, updatedRecord);
-  return StatusOr<std::pair<std::int64_t, std::int64_t>>(stats);
+  return stats;
 }
 
 StatusOr<std::int64_t> batchInsertData(spanner::Client& client, std::int64_t batchSize, bool dryRun) {
