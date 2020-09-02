@@ -115,7 +115,7 @@ StatusOr<std::int64_t> batchInsertData(spanner::Client& client, std::int64_t bat
 	      return mutations;
       });
   if(!commitResult) return commitResult.status();
-  return StatusOr<std::int64_t>(batchSize);
+  return batchSize;
 }
 } // namespace modeling_tool
 
